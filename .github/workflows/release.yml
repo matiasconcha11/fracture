@@ -1,0 +1,59 @@
+# Builds installable bundles when a version tag (v1.2.3) is pushed and attaches them to a draft release.
+# The macOS bundles are ad-hoc signed only: other Macs will need them notarized (Apple Developer account)
+# or the user has to clear quarantine manually.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: brew install ninja
+      - name: Build universal binary
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DFRACTURE_BUILD_TESTS=OFF
+          cmake --build build
+      - name: Package
+        run: |
+          cd build/Fracture_artefacts/Release
+          ditto -c -k --keepParent AU/Fracture.component "$GITHUB_WORKSPACE/Fracture-${GITHUB_REF_NAME}-macOS-AU.zip"
+          ditto -c -k --keepParent VST3/Fracture.vst3 "$GITHUB_WORKSPACE/Fracture-${GITHUB_REF_NAME}-macOS-VST3.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: Fracture-*.zip
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build
+        run: |
+          cmake -B build -DFRACTURE_BUILD_TESTS=OFF
+          cmake --build build --config Release --parallel
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path build/Fracture_artefacts/Release/VST3/Fracture.vst3 -DestinationPath "Fracture-$env:GITHUB_REF_NAME-Windows-VST3.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: Fracture-*.zip
+
+  release:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" Fracture-*.zip --repo "$GITHUB_REPOSITORY" --draft --generate-notes

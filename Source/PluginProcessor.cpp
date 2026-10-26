@@ -17,6 +17,9 @@ namespace Params
         {
             case GlitchEngine::repeat: return { repeatCount, repeatPitch };
             case GlitchEngine::tapeStop: return { tapeCurve };
+            case GlitchEngine::stretch: return { stretchSpeed };
+            case GlitchEngine::distort: return { distortAmount };
+            case GlitchEngine::ringMod: return { ringFrequency };
             case GlitchEngine::gate: return { gatePulses, gateDuty };
             case GlitchEngine::crush: return { crushAmount };
             case GlitchEngine::filter: return { filterDirection, filterResonance };
@@ -39,6 +42,23 @@ FractureProcessor::FractureProcessor()
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMS", createLayout())
 {
+    for (auto* parameter : getParameters())
+        parameter->addListener (this);
+}
+
+FractureProcessor::~FractureProcessor()
+{
+    for (auto* parameter : getParameters())
+        parameter->removeListener (this);
+}
+
+void FractureProcessor::parameterValueChanged (int parameterIndex, float)
+{
+    // Bypass and the selected pattern don't change the sound a preset describes.
+    const auto* parameter = getParameters()[parameterIndex];
+
+    if (parameter != getBypassParameter() && parameter != apvts.getParameter (Params::pattern))
+        markPresetDirty();
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout FractureProcessor::createLayout()
@@ -56,6 +76,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout FractureProcessor::createLay
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { repeatCount, 1 }, "Repeats", StringArray { "2", "3", "4", "6", "8", "16" }, 2));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { repeatPitch, 1 }, "Repeat Pitch Drop", NormalisableRange<float> (0.0f, 1.0f), 0.0f, pct));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { tapeCurve, 1 }, "Tape Stop Curve", NormalisableRange<float> (0.0f, 1.0f), 0.5f, pct));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { stretchSpeed, 1 }, "Stretch Speed", NormalisableRange<float> (0.25f, 1.0f), 0.5f, pct));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { distortAmount, 1 }, "Distort Amount", NormalisableRange<float> (0.0f, 1.0f), 0.6f, pct));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ringFrequency, 1 }, "Ring Mod Frequency",
+                                                       NormalisableRange<float> (30.0f, 2000.0f, 0.0f, 0.3f), 220.0f,
+                                                       AudioParameterFloatAttributes().withStringFromValueFunction (
+                                                           [] (float v, int) { return String (roundToInt (v)) + " Hz"; })));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { gatePulses, 1 }, "Gate Pulses", StringArray { "2", "3", "4", "6", "8" }, 2));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { gateDuty, 1 }, "Gate Length", NormalisableRange<float> (0.1f, 0.9f), 0.5f, pct));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { crushAmount, 1 }, "Crush Amount", NormalisableRange<float> (0.0f, 1.0f), 0.6f, pct));
@@ -126,6 +152,9 @@ GlitchEngine::Settings FractureProcessor::readSettings() const
     r.repeats = repeatChoices[juce::jlimit (0, 5, (int) param (repeatCount))];
     r.pitch = param (repeatPitch);
     settings[GlitchEngine::tapeStop].tapeCurve = param (tapeCurve);
+    settings[GlitchEngine::stretch].stretchSpeed = param (stretchSpeed);
+    settings[GlitchEngine::distort].driveAmount = param (distortAmount);
+    settings[GlitchEngine::ringMod].ringFrequency = param (ringFrequency);
     settings[GlitchEngine::gate].pulses = pulseChoices[juce::jlimit (0, 4, (int) param (gatePulses))];
     settings[GlitchEngine::gate].duty = param (gateDuty);
     settings[GlitchEngine::crush].crushAmount = param (crushAmount);
@@ -140,9 +169,41 @@ GlitchEngine::Settings FractureProcessor::readSettings() const
     return settings;
 }
 
-void FractureProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void FractureProcessor::handleMidi (const juce::MidiBuffer& midi)
+{
+    for (const auto metadata : midi)
+    {
+        const auto message = metadata.getMessage();
+        const auto note = message.getNoteNumber();
+
+        if (message.isNoteOn())
+        {
+            if (juce::isPositiveAndBelow (note - firstPatternNote, GlitchEngine::numPatterns))
+                engine.setPatternOverride (note - firstPatternNote);
+            else if (juce::isPositiveAndBelow (note - firstLiveNote, (int) GlitchEngine::numLanes))
+            {
+                heldLiveNote = note;
+                engine.setLiveLane (note - firstLiveNote);
+            }
+        }
+        else if (message.isNoteOff() && note == heldLiveNote)
+        {
+            heldLiveNote = -1;
+            engine.setLiveLane (GlitchEngine::noEffect);
+        }
+        else if (message.isAllNotesOff() || message.isAllSoundOff())
+        {
+            heldLiveNote = -1;
+            engine.setLiveLane (GlitchEngine::noEffect);
+        }
+    }
+}
+
+void FractureProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
+    handleMidi (midi);
+    midi.clear();
 
     for (auto ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear (ch, 0, buffer.getNumSamples());
@@ -193,7 +254,7 @@ void FractureProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
 Patterns::Pattern FractureProcessor::getPattern (int index) const
 {
-    Patterns::Pattern pattern;
+    Patterns::Pattern pattern {};
 
     for (int i = 0; i < GlitchEngine::numSteps; ++i)
         pattern[(size_t) i] = engine.getStep (index, i);
@@ -206,6 +267,7 @@ void FractureProcessor::setPattern (int index, const Patterns::Pattern& pattern)
     for (int i = 0; i < GlitchEngine::numSteps; ++i)
         engine.setStep (index, i, pattern[(size_t) i]);
 
+    markPresetDirty();
     updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 }
 
@@ -214,25 +276,31 @@ namespace
     juce::String patternKey (int index) { return "pattern" + juce::String::charToString ((juce::juce_wchar) ('A' + index)); }
 }
 
-void FractureProcessor::getStateInformation (juce::MemoryBlock& destData)
+juce::ValueTree FractureProcessor::getStateTree()
 {
     auto state = apvts.copyState();
 
     for (int p = 0; p < GlitchEngine::numPatterns; ++p)
-        state.setProperty (patternKey (p), Patterns::toString (getPattern (p)), nullptr);
+    {
+        const auto pattern = getPattern (p);
+        state.setProperty (patternKey (p), Patterns::toString (pattern), nullptr);
 
-    if (auto xml = state.createXml())
-        copyXmlToBinary (*xml, destData);
+        if (const auto overrides = Patterns::overridesToString (pattern); overrides.isNotEmpty())
+            state.setProperty (patternKey (p) + "Overrides", overrides, nullptr);
+    }
+
+    state.setProperty ("presetName", getPresetName(), nullptr);
+    state.setProperty ("presetDirty", isPresetDirty(), nullptr);
+    return state;
 }
 
-void FractureProcessor::setStateInformation (const void* data, int sizeInBytes)
+void FractureProcessor::setStateTree (const juce::ValueTree& source)
 {
-    auto xml = getXmlFromBinary (data, sizeInBytes);
-
-    if (xml == nullptr || ! xml->hasTagName (apvts.state.getType()))
+    if (! source.hasType (apvts.state.getType()))
         return;
 
-    auto state = juce::ValueTree::fromXml (*xml);
+    auto state = source.createCopy();
+    const ScopedPresetLoad loading (*this);
 
     // Patterns live in atomics, so they can be restored from any thread. 0.1 had a single "pattern".
     if (state.hasProperty ("pattern"))
@@ -240,12 +308,34 @@ void FractureProcessor::setStateInformation (const void* data, int sizeInBytes)
 
     for (int p = 0; p < GlitchEngine::numPatterns; ++p)
     {
-        setPattern (p, Patterns::fromString (state.getProperty (patternKey (p), "").toString()));
+        auto pattern = Patterns::fromString (state.getProperty (patternKey (p), "").toString());
+        Patterns::overridesFromString (state.getProperty (patternKey (p) + "Overrides", "").toString(), pattern);
+        setPattern (p, pattern);
         state.removeProperty (patternKey (p), nullptr);
+        state.removeProperty (patternKey (p) + "Overrides", nullptr);
     }
 
+    if (state.hasProperty ("presetName"))
+        setPresetName (state.getProperty ("presetName").toString());
+
+    const auto dirty = (bool) state.getProperty ("presetDirty", false);
     state.removeProperty ("pattern", nullptr);
+    state.removeProperty ("presetName", nullptr);
+    state.removeProperty ("presetDirty", nullptr);
     apvts.replaceState (state);
+    presetDirty = dirty;
+}
+
+void FractureProcessor::getStateInformation (juce::MemoryBlock& destData)
+{
+    if (auto xml = getStateTree().createXml())
+        copyXmlToBinary (*xml, destData);
+}
+
+void FractureProcessor::setStateInformation (const void* data, int sizeInBytes)
+{
+    if (auto xml = getXmlFromBinary (data, sizeInBytes); xml != nullptr && xml->hasTagName (apvts.state.getType()))
+        setStateTree (juce::ValueTree::fromXml (*xml));
 }
 
 juce::AudioProcessorEditor* FractureProcessor::createEditor()

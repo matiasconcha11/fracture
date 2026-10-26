@@ -24,7 +24,7 @@ artefacts="$build/Fracture_artefacts/${config:-Release}"
 # macOS only finds AUs through its component registry, so validate the installed copy
 # and make the registrar rescan (a fresh CI machine has never seen this plugin).
 killall -9 AudioComponentRegistrar 2>/dev/null || true
-auval -v aufx Frct Mcon >/dev/null 2>&1 || true
+auval -v aumf Frct Mcon >/dev/null 2>&1 || true
 
 for plugin in "$artefacts/VST3/Fracture.vst3" "$HOME/Library/Audio/Plug-Ins/Components/Fracture.component"; do
     echo "==> pluginval (strictness $strictness): $(basename "$plugin")"

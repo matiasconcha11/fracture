@@ -1,35 +1,31 @@
 # Fracture
 
-**A step sequencer of glitch effects.** Paint effects onto a 16-step grid and Fracture plays them in time with
-your DAW: stutters, reverses, tape stops, gates, bit crushing, filter sweeps, shuffled slices, echoes and
-pitch drops. Hit Randomize for instant chaos, turn up Mutate and let the pattern evolve by itself, or use each
-lane's Chance knob so it never repeats exactly. A live waveform shows what every effect did to your audio.
+**A step sequencer of glitch effects.** Draw effect blocks onto a 16-step grid and Fracture plays them in time
+with your DAW: stutters, reverses, tape stops, time-stretches, gates, bit crushing, distortion, filter sweeps, ring
+modulation, echoes, pitch shifts and shuffled slices. Pick one of 50+ presets, hit Randomize, turn up Mutate and let
+the pattern evolve, or play effects live from a MIDI keyboard.
 
-AU · VST3 · Standalone — macOS (Windows VST3 builds in CI) — built with [JUCE](https://juce.com)
+AU · VST3 · Standalone — macOS (Windows VST3 builds in CI) — by [Rhizr](https://rhizr.dev/music), built with [JUCE](https://juce.com)
 
 ![Fracture](docs/screenshot.png)
 
 ## Features
 
-- **Nine effect lanes**, one effect per step:
-  - **Repeat** — retrigger the start of the step 2 to 16 times, optionally dropping in pitch each time
-  - **Reverse** — the previous step, backwards
-  - **Tape Stop** — slows to a halt within the step
-  - **Gate** — rhythmic chopping with adjustable pulses and length
-  - **Crush** — bit depth and sample-rate reduction
-  - **Filter** — a resonant sweep that closes or opens across the step
-  - **Shuffle** — an earlier step plays in place of this one
-  - **Echo** — a feedback delay that throws the step's audio
-  - **Pitch** — shifts the step up or down by up to two octaves
-- **Four patterns (A–D) and Chain** — chain plays every pattern that has steps in it, one loop each
-- **Chance per lane** — how often that lane's steps actually fire
-- **Mutate** — each loop, a step or two may change by themselves so the pattern evolves
-- **Patterns, Randomize, Undo/Redo** — 14 starting patterns, random ones with adjustable density, copy between slots
-- **Timing** — steps of 1/8, 1/16, 1/32 or triplets, swing, and pattern length 1–16 for odd-length loops;
-  locked to your DAW's transport (it only glitches while playing)
-- **Live view** — a waveform of the output across the pattern, coloured by the effect that shaped each moment,
-  plus a playhead and a sweep across the step that's firing
-- **Mix, Output and click-free bypass**; every step edge is faded so switching effects never clicks
+- **Thirteen effect lanes**: Repeat, Reverse, Tape Stop, Stretch, Gate, Crush, Distort, Filter, Ring Mod, Echo,
+  Pitch, Shuffle — and Random, which plays a different effect each time
+- **Blocks** — an effect can last one step or many; drag across the grid to draw one, drag it to move it, drag
+  its edge to resize it
+- **Per-block settings** — right-click a block to give it its own chance and value (e.g. 8 repeats here,
+  16 there, or a pitch that steps down block by block)
+- **Four patterns (A–D) and Chain**; **Mutate** lets the pattern evolve a little every loop
+- **Presets** — 50+ factory presets in categories (Stutter, Time, Rhythm, Lo-Fi, Filter & Space, Pitch,
+  Random & Evolving, Combos), plus your own saved as `.fracturepreset` files
+- **MIDI** — notes C1–D#1 switch between patterns A–D; notes from C2 up play an effect live for as long as they're
+  held, even with the transport stopped
+- **Timing** — 1/8, 1/16, 1/32 or triplet steps, swing, and pattern lengths of 1–16 for polyrhythms
+- **Live view** — a waveform of the output coloured by the effect that shaped each moment, a playhead, and a
+  sweep across the block that's playing
+- **Undo/redo**, resizable window, mix, output and click-free bypass
 
 ## Install
 
@@ -45,7 +41,7 @@ The builds aren't notarized by Apple yet, so macOS blocks them at first. Clear t
 ```
 xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/Fracture.component ~/Library/Audio/Plug-Ins/VST3/Fracture.vst3
 ```
-Then restart your DAW and look for **Matias Concha → Fracture**.
+Then restart your DAW and look for **Rhizr → Fracture**.
 
 **Windows** — unzip and move `Fracture.vst3` into `C:\Program Files\Common Files\VST3\`. (The Windows build is
 compiled and unit-tested automatically but hasn't been tried in a DAW yet.)
@@ -68,9 +64,10 @@ The build installs the plugin into `~/Library/Audio/Plug-Ins/`.
 
 ## Using it
 
-- Click a cell to place that lane's effect on that step; click it again to clear it. Drag along a lane to paint
-  or erase several steps.
-- A step holds one effect at a time: placing one replaces whatever was on that step.
+- Drag across empty steps in a lane to draw a block; click a block to delete it, drag it to move it, drag its
+  right edge to make it longer or shorter. Right-click a block for its own chance and value.
+- A step holds one effect at a time: drawing over a step replaces whatever was there.
+- In Logic, route MIDI to Fracture with the **Side Chain** (MIDI) menu at the top of the plugin window.
 - Hover a small knob to see what it does; drag it to change the value.
 - Effects that replay audio (Repeat, Reverse, Tape Stop, Shuffle) use what the track played a moment ago, so they
   work best on parts that are already playing (drums, loops, vocals), not on the very first step after you press play.
@@ -90,10 +87,10 @@ CI builds and tests on macOS and Windows on every push; pushing a version tag bu
 
 ## Status
 
-Fracture is new: it passes pluginval and Apple's auval, and real-world testing in Logic Pro is under way.
+Fracture is young: it passes pluginval and Apple's auval, and real-world testing in Logic Pro is under way.
 Bug reports and ideas are welcome in [Issues](https://github.com/matiasconcha11/fracture/issues).
 
-Also by the same author: **[Contour](https://github.com/matiasconcha11/contour)** (curve shaper) and
+More from [Rhizr](https://rhizr.dev/music): **[Contour](https://github.com/matiasconcha11/contour)** (curve shaper) and
 **[Duck](https://github.com/matiasconcha11/duck)** (one-knob sidechain).
 
 ## License

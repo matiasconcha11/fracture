@@ -33,7 +33,7 @@ jobs:
       - name: auval
         run: |
           killall -9 AudioComponentRegistrar || true
-          auval -v aufx Frct Mcon
+          auval -v aumf Frct Mcon
 
   windows:
     runs-on: windows-latest

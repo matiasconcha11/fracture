@@ -2,6 +2,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "PluginEditor.h"
+#include "PresetManager.h"
 
 using Catch::Matchers::WithinAbs;
 
@@ -228,14 +229,14 @@ TEST_CASE ("Patterns survive text round trips; randomize follows density", "[pat
     for (int i = 0; i < Patterns::names().size(); ++i)
     {
         const auto pattern = Patterns::get (i);
-        CHECK (Patterns::fromString (Patterns::toString (pattern)) == pattern);
+        CHECK (Patterns::same (Patterns::fromString (Patterns::toString (pattern)), pattern));
     }
 
     juce::Random random (42);
-    const auto count = [] (const Patterns::Pattern& p) { return std::count_if (p.begin(), p.end(), [] (int s) { return s >= 0; }); };
+    const auto count = [] (const Patterns::Pattern& p) { return std::count_if (p.begin(), p.end(), [] (const auto& s) { return s.lane >= 0; }); };
 
     CHECK (count (Patterns::randomize (0.0f, random)) == 0);
-    CHECK (count (Patterns::randomize (1.0f, random)) == GlitchEngine::numSteps);
+    CHECK (count (Patterns::randomize (1.0f, random)) > GlitchEngine::numSteps * 3 / 4);
 }
 
 TEST_CASE ("Pattern and settings survive a save and reload", "[processor]")
@@ -258,6 +259,175 @@ TEST_CASE ("Pattern and settings survive a save and reload", "[processor]")
     CHECK_THAT (restored.apvts.getRawParameterValue (Params::chanceId (GlitchEngine::gate))->load(), WithinAbs (0.3f, 1.0e-4));
 }
 
+TEST_CASE_METHOD (EngineFixture, "A tied block is one event across its steps", "[engine]")
+{
+    // Repeat over steps 1-2 (12000 samples) with 4 repeats: slices of 3000, not 1500.
+    auto pattern = Patterns::fromString (".R+.............");
+    for (int i = 0; i < GlitchEngine::numSteps; ++i)
+        engine.setStep (0, i, pattern[(size_t) i]);
+
+    settings[GlitchEngine::repeat].repeats = 4;
+    const auto out = run (stepSamples * 3);
+
+    // 500 samples into the second slice (at 3000 + 500), we hear the block's first slice again.
+    CHECK_THAT (out[(size_t) stepSamples + 3500], WithinAbs (ramp (stepSamples + 500), 1.0e-6));
+    // Crossing into the tied step doesn't restart the effect: still slice 3 of the same block.
+    CHECK_THAT (out[(size_t) stepSamples + 6500], WithinAbs (ramp (stepSamples + 500), 1.0e-6));
+}
+
+TEST_CASE_METHOD (EngineFixture, "A block's own value overrides the lane setting", "[engine]")
+{
+    GlitchEngine::Step step { GlitchEngine::repeat };
+    step.value = 0.0f; // 2 repeats: slices of 3000
+    engine.setStep (0, 1, step);
+    settings[GlitchEngine::repeat].repeats = 8;
+
+    const auto out = run (stepSamples * 2);
+    CHECK_THAT (out[(size_t) stepSamples + 3200], WithinAbs (ramp (stepSamples + 200), 1.0e-6));
+}
+
+TEST_CASE_METHOD (EngineFixture, "A block's own chance overrides the lane chance", "[engine]")
+{
+    GlitchEngine::Step step { GlitchEngine::reverse };
+    step.chance = 0.0f;
+    engine.setStep (0, 1, step);
+    settings[GlitchEngine::reverse].chance = 1.0f;
+
+    const auto out = run (stepSamples * 2);
+    CHECK (out[(size_t) stepSamples + 3000] == ramp (stepSamples + 3000));
+}
+
+TEST_CASE_METHOD (EngineFixture, "Ring Mod multiplies by a sine", "[engine]")
+{
+    engine.setStep (0, 0, GlitchEngine::ringMod);
+    settings[GlitchEngine::ringMod].ringFrequency = 100.0f;
+    const auto out = run (stepSamples, 1.0f, [] (int) { return 1.0f; });
+
+    // A quarter period of 100 Hz in: the carrier is at its peak.
+    CHECK_THAT (out[120], WithinAbs (1.0f, 1.0e-3));
+    CHECK_THAT (out[240], WithinAbs (0.0f, 1.0e-3));
+}
+
+TEST_CASE_METHOD (EngineFixture, "Stretch plays slower than real time", "[engine]")
+{
+    engine.setStep (0, 1, GlitchEngine::stretch);
+    settings[GlitchEngine::stretch].stretchSpeed = 0.5f;
+    const auto out = run (stepSamples * 2);
+
+    // By the end of the block, playback has only got about half way through it.
+    const auto heard = (out[(size_t) stepSamples + 5500] / 1.0e-5f) - stepSamples;
+    CHECK (heard > 2000.0f);
+    CHECK (heard < 3600.0f);
+}
+
+TEST_CASE_METHOD (EngineFixture, "Random plays one of the real effects", "[engine]")
+{
+    engine.setStep (0, 1, GlitchEngine::randomLane);
+    const auto out = run (stepSamples * 2);
+
+    auto changed = 0;
+
+    for (int n = stepSamples + 200; n < 2 * stepSamples - 200; ++n)
+        changed += out[(size_t) n] != ramp (n) ? 1 : 0;
+
+    CHECK (changed > 1000);
+}
+
+TEST_CASE_METHOD (EngineFixture, "A held MIDI effect plays without the transport", "[engine]")
+{
+    timing.running = false;
+    engine.setLiveLane (GlitchEngine::reverse);
+    const auto out = run (stepSamples);
+
+    CHECK_THAT (out[3000], WithinAbs (ramp (0), 1.0e-6)); // reading backwards from where the note started
+
+    engine.setLiveLane (GlitchEngine::noEffect);
+    const auto after = run (blockSize);
+    CHECK (after[100] == ramp (100));
+}
+
+TEST_CASE ("MIDI notes switch patterns and hold effects", "[processor]")
+{
+    const juce::ScopedJuceInitialiser_GUI juce;
+    FractureProcessor processor;
+    processor.prepareToPlay (48000.0, 480);
+
+    juce::AudioBuffer<float> buffer (2, 480);
+    juce::MidiBuffer midi;
+    midi.addEvent (juce::MidiMessage::noteOn (1, FractureProcessor::firstPatternNote + 2, 0.8f), 0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, FractureProcessor::firstLiveNote + GlitchEngine::gate, 0.8f), 0);
+    buffer.clear();
+    processor.processBlock (buffer, midi);
+
+    CHECK (processor.engine.getPatternOverride() == 2);
+    CHECK (processor.engine.firingLane.load() == GlitchEngine::gate);
+
+    midi.clear();
+    midi.addEvent (juce::MidiMessage::noteOff (1, FractureProcessor::firstLiveNote + GlitchEngine::gate), 0);
+    processor.processBlock (buffer, midi);
+    CHECK (processor.engine.firingLane.load() == GlitchEngine::noEffect);
+}
+
+TEST_CASE ("Blocks, ties and overrides survive text and state round trips", "[patterns]")
+{
+    auto pattern = Patterns::fromString ("R+++.V+..?..X++.");
+    pattern[5].chance = 0.4f;
+    pattern[5].value = 0.25f;
+
+    auto restored = Patterns::fromString (Patterns::toString (pattern));
+    Patterns::overridesFromString (Patterns::overridesToString (pattern), restored);
+
+    CHECK (Patterns::same (pattern, restored));
+    CHECK (Patterns::toString (restored) == "R+++.V+..?..X++.");
+}
+
+TEST_CASE ("Every factory preset loads and marks itself clean", "[presets]")
+{
+    const juce::ScopedJuceInitialiser_GUI juce;
+    FractureProcessor processor;
+    const auto directory = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("FracturePresets", {}, false);
+    PresetManager presets (processor, directory);
+
+    REQUIRE (PresetManager::numFactoryPresets() >= 40);
+
+    for (int i = 0; i < PresetManager::numFactoryPresets(); ++i)
+    {
+        REQUIRE (presets.load (i));
+        CHECK (processor.getPresetName() == presets.getPresets()[(size_t) i].name);
+        CHECK_FALSE (processor.isPresetDirty());
+        CHECK (presets.getCurrentIndex() == i);
+
+        if (i > 0)
+            CHECK_FALSE (processor.engine.isEmpty (0)); // every preset but Init has something in pattern A
+    }
+
+    directory.deleteRecursively();
+}
+
+TEST_CASE ("User presets save and load back", "[presets]")
+{
+    const juce::ScopedJuceInitialiser_GUI juce;
+    FractureProcessor processor;
+    const auto directory = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("FracturePresets", {}, false);
+    PresetManager presets (processor, directory);
+
+    processor.setPattern (1, Patterns::fromString ("..E+..P+........"));
+    REQUIRE (presets.save ("My Glitch"));
+    CHECK_FALSE (processor.isPresetDirty());
+
+    presets.load (0);
+    REQUIRE (processor.engine.isEmpty (1));
+
+    REQUIRE (presets.load ((int) presets.getPresets().size() - 1));
+    CHECK (processor.getPresetName() == "My Glitch");
+    CHECK (Patterns::toString (processor.getPattern (1)) == "..E+..P+........");
+
+    processor.setPattern (1, Patterns::get (0));
+    CHECK (processor.isPresetDirty());
+
+    directory.deleteRecursively();
+}
+
 TEST_CASE ("Sessions from 0.1 load their single pattern into A", "[processor]")
 {
     const juce::ScopedJuceInitialiser_GUI juce;
@@ -277,7 +447,8 @@ TEST_CASE ("Editor snapshot", "[.snapshot]")
 {
     const juce::ScopedJuceInitialiser_GUI juce;
     FractureProcessor processor;
-    processor.setPattern (0, Patterns::get (12));
+    PresetManager presets (processor);
+    presets.load (juce::SystemStats::getEnvironmentVariable ("FRACTURE_SNAPSHOT_PRESET", "48").getIntValue());
     processor.engine.setRandomSeed (3);
 
     // Play a few bars of a drum-like signal so the strip and the playhead have something to show.

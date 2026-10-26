@@ -1,8 +1,9 @@
 # Fracture
 
 **A step sequencer of glitch effects.** Paint effects onto a 16-step grid and Fracture plays them in time with
-your DAW: stutters, reverses, tape stops, gates, bit crushing, filter sweeps and shuffled slices. Hit
-Randomize for instant chaos, or use each lane's Chance knob so the pattern never repeats exactly.
+your DAW: stutters, reverses, tape stops, gates, bit crushing, filter sweeps, shuffled slices, echoes and
+pitch drops. Hit Randomize for instant chaos, turn up Mutate and let the pattern evolve by itself, or use each
+lane's Chance knob so it never repeats exactly. A live waveform shows what every effect did to your audio.
 
 AU · VST3 · Standalone — macOS (Windows VST3 builds in CI) — built with [JUCE](https://juce.com)
 
@@ -10,7 +11,7 @@ AU · VST3 · Standalone — macOS (Windows VST3 builds in CI) — built with [J
 
 ## Features
 
-- **Seven effect lanes**, one effect per step:
+- **Nine effect lanes**, one effect per step:
   - **Repeat** — retrigger the start of the step 2 to 16 times, optionally dropping in pitch each time
   - **Reverse** — the previous step, backwards
   - **Tape Stop** — slows to a halt within the step
@@ -18,9 +19,16 @@ AU · VST3 · Standalone — macOS (Windows VST3 builds in CI) — built with [J
   - **Crush** — bit depth and sample-rate reduction
   - **Filter** — a resonant sweep that closes or opens across the step
   - **Shuffle** — an earlier step plays in place of this one
+  - **Echo** — a feedback delay that throws the step's audio
+  - **Pitch** — shifts the step up or down by up to two octaves
+- **Four patterns (A–D) and Chain** — chain plays every pattern that has steps in it, one loop each
 - **Chance per lane** — how often that lane's steps actually fire
-- **Patterns and Randomize** — 12 starting patterns, plus random ones with adjustable density
-- **Step length** — 1/8, 1/16, 1/32 or triplets, locked to your DAW's transport (it only glitches while playing)
+- **Mutate** — each loop, a step or two may change by themselves so the pattern evolves
+- **Patterns, Randomize, Undo/Redo** — 14 starting patterns, random ones with adjustable density, copy between slots
+- **Timing** — steps of 1/8, 1/16, 1/32 or triplets, swing, and pattern length 1–16 for odd-length loops;
+  locked to your DAW's transport (it only glitches while playing)
+- **Live view** — a waveform of the output across the pattern, coloured by the effect that shaped each moment,
+  plus a playhead and a sweep across the step that's firing
 - **Mix, Output and click-free bypass**; every step edge is faded so switching effects never clicks
 
 ## Install

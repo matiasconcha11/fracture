@@ -5,13 +5,21 @@
 namespace
 {
     constexpr double historySeconds = 10.0;
-    constexpr double fadeSeconds = 0.002; // at step and slice edges, against clicks
+    constexpr double echoSeconds = 2.0;
+    constexpr double fadeSeconds = 0.002;       // at step and slice edges, against clicks
+    constexpr double pitchWindowSeconds = 0.06; // grain size of the pitch shifter
+
+    double fractionalPart (double x) { return x - std::floor (x); }
 }
 
 GlitchEngine::GlitchEngine()
 {
-    for (auto& step : pattern)
-        step.store (noEffect);
+    for (auto& pattern : patterns)
+        for (auto& step : pattern)
+            step.store (noEffect);
+
+    for (auto& lane : waveformLane)
+        lane.store (noEffect);
 }
 
 void GlitchEngine::prepare (double newSampleRate, int numChannels)
@@ -23,11 +31,23 @@ void GlitchEngine::prepare (double newSampleRate, int numChannels)
     activeLane = noEffect;
     gateEnvelope = 1.0f;
 
+    for (auto& buffer : echoBuffers)
+        buffer.assign ((size_t) (echoSeconds * sampleRate), 0.0f);
+
     for (auto& f : filters)
         f.reset();
 
     for (auto& c : crushers)
         c = {};
+}
+
+bool GlitchEngine::isEmpty (int patternIndex) const
+{
+    for (const auto& step : patterns[(size_t) patternIndex])
+        if (step.load() != noEffect)
+            return false;
+
+    return true;
 }
 
 float GlitchEngine::read (int channel, double position) const
@@ -44,13 +64,55 @@ float GlitchEngine::read (int channel, double position) const
     return a + (b - a) * frac;
 }
 
-void GlitchEngine::startStep (juce::int64 stepNumber, double samplesIntoStep, const Settings& settings)
+int GlitchEngine::patternForCycle (juce::int64 cycle, const Timing& timing) const
+{
+    if (! timing.chain)
+        return juce::jlimit (0, numPatterns - 1, timing.pattern);
+
+    // Chain plays the patterns that have something in them, in order.
+    int used[numPatterns];
+    int count = 0;
+
+    for (int p = 0; p < numPatterns; ++p)
+        if (! isEmpty (p))
+            used[count++] = p;
+
+    return count == 0 ? juce::jlimit (0, numPatterns - 1, timing.pattern) : used[cycle % count];
+}
+
+void GlitchEngine::mutatePattern (int patternIndex, int length)
+{
+    // Change one or two steps: fill an empty one, or clear or swap a used one.
+    const auto changes = 1 + random.nextInt (2);
+
+    for (int i = 0; i < changes; ++i)
+    {
+        const auto step = random.nextInt (juce::jmax (1, length));
+        const auto current = getStep (patternIndex, step);
+        const auto newLane = random.nextInt (numLanes);
+
+        if (current == noEffect)
+            setStep (patternIndex, step, newLane);
+        else
+            setStep (patternIndex, step, random.nextBool() ? noEffect : newLane);
+    }
+}
+
+void GlitchEngine::startStep (juce::int64 stepNumber, double samplesIntoStep, double length, const Timing& timing, const Settings& settings)
 {
     currentStepNumber = stepNumber;
+    stepLength = length;
     stepStart = written - 1 - (juce::int64) samplesIntoStep;
 
-    const auto step = (int) (stepNumber % numSteps);
-    const auto lane = pattern[(size_t) step].load();
+    const auto patternLength = juce::jlimit (1, numSteps, timing.length);
+    const auto cycle = stepNumber / patternLength;
+    const auto step = (int) (stepNumber % patternLength);
+    const auto patternIndex = patternForCycle (cycle, timing);
+
+    if (step == 0 && timing.mutate > 0.0f && random.nextFloat() < timing.mutate)
+        mutatePattern (patternIndex, patternLength);
+
+    const auto lane = getStep (patternIndex, step);
     activeLane = lane != noEffect && random.nextFloat() < settings[(size_t) lane].chance ? lane : noEffect;
 
     if (activeLane == shuffle)
@@ -61,6 +123,7 @@ void GlitchEngine::startStep (juce::int64 stepNumber, double samplesIntoStep, co
             f.reset();
 
     currentStep.store (step);
+    currentPattern.store (patternIndex);
     firingLane.store (activeLane);
 }
 
@@ -125,6 +188,39 @@ float GlitchEngine::effectSample (int channel, float input, double t, const Lane
             // An earlier step plays in place of this one.
             return read (channel, here - (double) shuffleOffset * length + t);
 
+        case echo:
+        {
+            // A feedback delay that starts fresh with the step, so the echoes belong to this step only.
+            auto& buffer = echoBuffers[(size_t) juce::jmin (channel, 1)];
+            const auto size = (juce::int64) buffer.size();
+            const auto position = (juce::int64) t;
+            const auto delay = juce::jmax ((juce::int64) 1, (juce::int64) (length / juce::jmax (1, s.echoDivision)));
+            const auto echoed = position >= delay ? buffer[(size_t) ((position - delay) % size)] : 0.0f;
+            const auto wet = input + s.echoFeedback * echoed;
+            buffer[(size_t) (position % size)] = wet;
+            return wet;
+        }
+
+        case pitch:
+        {
+            // Two-tap delay-line pitch shifter: each tap's delay ramps through a short window, and the
+            // taps are offset by half a window and crossfaded so the jumps are never heard.
+            const auto speed = std::pow (2.0, s.semitones / 12.0);
+            const auto window = pitchWindowSeconds * sampleRate;
+            const auto phase = t * (1.0 - speed) / window;
+            const auto now = here + t;
+            auto out = 0.0f;
+
+            for (const auto offset : { 0.0, 0.5 })
+            {
+                const auto f = fractionalPart (phase + offset);
+                const auto weight = (float) std::pow (std::sin (juce::MathConstants<double>::pi * f), 2.0);
+                out += weight * read (channel, now - f * window);
+            }
+
+            return out;
+        }
+
         default:
             return input;
     }
@@ -136,9 +232,11 @@ void GlitchEngine::process (juce::AudioBuffer<float>& buffer, const Timing& timi
     const auto numChannels = juce::jmin (buffer.getNumChannels(), (int) history.size());
     const auto historySize = (juce::int64) history[0].size();
 
-    stepLength = timing.stepBeats * 60.0 / timing.bpm * sampleRate;
+    const auto baseLength = timing.stepBeats * 60.0 / timing.bpm * sampleRate;
     const auto ppqPerSample = timing.bpm / 60.0 / sampleRate;
     const auto fade = fadeSeconds * sampleRate;
+    const auto split = 1.0 + juce::jlimit (0.0, 0.5, timing.swing); // where the second step of each pair starts
+    const auto patternLength = juce::jlimit (1, numSteps, timing.length);
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -154,27 +252,49 @@ void GlitchEngine::process (juce::AudioBuffer<float>& buffer, const Timing& timi
             continue;
         }
 
-        const auto stepPosition = (timing.ppq + i * ppqPerSample) / timing.stepBeats;
-        const auto stepNumber = (juce::int64) std::floor (stepPosition);
+        // Steps come in pairs; swing makes the first of each pair longer and the second shorter.
+        const auto position = (timing.ppq + i * ppqPerSample) / timing.stepBeats;
+        const auto pair = std::floor (position / 2.0);
+        const auto local = position - pair * 2.0;
+        const auto second = local >= split;
+        const auto stepNumber = (juce::int64) pair * 2 + (second ? 1 : 0);
+        const auto length = (second ? 2.0 - split : split) * baseLength;
+        const auto fraction = second ? (local - split) / (2.0 - split) : local / split;
 
         if (stepNumber != currentStepNumber)
-            startStep (stepNumber, (stepPosition - (double) stepNumber) * stepLength, settings);
+            startStep (stepNumber, fraction * length, length, timing, settings);
 
-        if (activeLane == noEffect)
-            continue;
-
+        stepProgress.store ((float) fraction, std::memory_order_relaxed);
         const auto t = (double) (written - 1 - stepStart);
 
-        // Fade the effect in and out at the step edges so switching never clicks.
-        const auto edge = (float) juce::jlimit (0.0, 1.0, juce::jmin (t + 1.0, stepLength - t) / fade);
-        const auto amount = edge * mix;
+        if (activeLane != noEffect)
+        {
+            // Fade the effect in and out at the step edges so switching never clicks.
+            const auto edge = (float) juce::jlimit (0.0, 1.0, juce::jmin (t + 1.0, stepLength - t) / fade);
+            const auto amount = edge * mix;
+
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                const auto dry = buffer.getSample (ch, i);
+                const auto wet = effectSample (ch, dry, t, settings[(size_t) activeLane]);
+                buffer.setSample (ch, i, dry + (wet - dry) * amount);
+            }
+        }
+
+        // Waveform display: output peaks across the 16 steps, tagged with the effect playing.
+        const auto step = (int) (stepNumber % patternLength);
+        const auto bin = juce::jlimit (0, waveformBins - 1, (int) (((double) step + fraction) * (waveformBins / numSteps)));
+
+        if (bin != waveBin)
+        {
+            waveform[(size_t) waveBin].store (wavePeak, std::memory_order_relaxed);
+            waveformLane[(size_t) waveBin].store (activeLane, std::memory_order_relaxed);
+            wavePeak = 0.0f;
+            waveBin = bin;
+        }
 
         for (int ch = 0; ch < numChannels; ++ch)
-        {
-            const auto dry = buffer.getSample (ch, i);
-            const auto wet = effectSample (ch, dry, t, settings[(size_t) activeLane]);
-            buffer.setSample (ch, i, dry + (wet - dry) * amount);
-        }
+            wavePeak = juce::jmax (wavePeak, std::abs (buffer.getSample (ch, i)));
     }
 
     if (! timing.running)

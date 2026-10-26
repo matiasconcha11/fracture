@@ -18,7 +18,9 @@ namespace Theme
                                    juce::Colour (0xff5fa8ff),   // filter: blue
                                    juce::Colour (0xffff7a59),   // drive: coral
                                    juce::Colour (0xffc2e05a),   // crush: lime
-                                   juce::Colour (0xffff74b8) }; // time: pink
+                                   juce::Colour (0xffff74b8),   // time: pink
+                                   juce::Colour (0xff8fe3ff),   // light cyan
+                                   juce::Colour (0xffffd166) }; // yellow
 
     const juce::Colour accent = modules[0];
 

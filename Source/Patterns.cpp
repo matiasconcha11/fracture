@@ -5,7 +5,7 @@ namespace Patterns
     namespace
     {
         // One letter per lane, in GlitchEngine::Lane order; '.' is an empty step.
-        constexpr const char* laneLetters = "RVTGCFS";
+        constexpr const char* laneLetters = "RVTGCFSEP";
 
         struct Factory
         {
@@ -24,6 +24,8 @@ namespace Patterns
             { "Breakbeat Shuffle", "..S...S.S...S.SS" },
             { "Lo-Fi Bars", "CC..CC..CC..CC.." },
             { "Filter Drops", "...F...F...F.FFF" },
+            { "Dub Throws", "...E.......E..EE" },
+            { "Octave Drops", "....P.......PP.." },
             { "Glitch Mess", "R.VS.CG.RT.F.S.R" },
             { "Chaos", "RVSGRCSVTRGFSRVT" },
         };

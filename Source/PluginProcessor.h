@@ -6,8 +6,8 @@
 
 namespace Params
 {
-    inline const juce::StringArray laneIds { "repeat", "reverse", "tape", "gate", "crush", "filter", "shuffle" };
-    inline const juce::StringArray laneNames { "Repeat", "Reverse", "Tape Stop", "Gate", "Crush", "Filter", "Shuffle" };
+    inline const juce::StringArray laneIds { "repeat", "reverse", "tape", "gate", "crush", "filter", "shuffle", "echo", "pitch" };
+    inline const juce::StringArray laneNames { "Repeat", "Reverse", "Tape Stop", "Gate", "Crush", "Filter", "Shuffle", "Echo", "Pitch" };
 
     inline juce::String chanceId (int lane) { return laneIds[lane] + "Chance"; }
 
@@ -20,6 +20,15 @@ namespace Params
     inline const juce::String filterDirection { "filterDirection" };
     inline const juce::String filterResonance { "filterResonance" };
     inline const juce::String shuffleRange { "shuffleRange" };
+    inline const juce::String echoTime { "echoTime" };
+    inline const juce::String echoFeedback { "echoFeedback" };
+    inline const juce::String pitchSemitones { "pitchSemitones" };
+
+    inline const juce::String pattern { "pattern" };
+    inline const juce::String chain { "chain" };
+    inline const juce::String length { "length" };
+    inline const juce::String swing { "swing" };
+    inline const juce::String mutate { "mutate" };
 
     inline const juce::String stepLength { "stepLength" };
     inline const juce::String mix { "mix" };
@@ -61,8 +70,11 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
-    Patterns::Pattern getPattern() const;
-    void setPattern (const Patterns::Pattern&);
+    Patterns::Pattern getPattern (int index) const;
+    void setPattern (int index, const Patterns::Pattern&);
+
+    // The pattern being edited and played (when not chaining).
+    int selectedPattern() const { return (int) param (Params::pattern); }
 
     juce::AudioProcessorValueTreeState apvts;
     GlitchEngine engine;

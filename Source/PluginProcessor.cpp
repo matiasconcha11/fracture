@@ -21,6 +21,8 @@ namespace Params
             case GlitchEngine::crush: return { crushAmount };
             case GlitchEngine::filter: return { filterDirection, filterResonance };
             case GlitchEngine::shuffle: return { shuffleRange };
+            case GlitchEngine::echo: return { echoTime, echoFeedback };
+            case GlitchEngine::pitch: return { pitchSemitones };
             default: return {};
         }
     }
@@ -62,6 +64,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout FractureProcessor::createLay
     layout.add (std::make_unique<AudioParameterInt> (ParameterID { shuffleRange, 1 }, "Shuffle Range", 1, 8, 4,
                                                      AudioParameterIntAttributes().withStringFromValueFunction (
                                                          [] (int v, int) { return String (v) + (v == 1 ? " step" : " steps"); })));
+
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { echoTime, 1 }, "Echo Time", StringArray { "1/2", "1/3", "1/4", "1/8" }, 2));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { echoFeedback, 1 }, "Echo Feedback", NormalisableRange<float> (0.0f, 0.9f), 0.6f, pct));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { pitchSemitones, 1 }, "Pitch", -24, 24, -12,
+                                                     AudioParameterIntAttributes().withStringFromValueFunction (
+                                                         [] (int v, int) { return (v > 0 ? "+" : "") + String (v) + " st"; })));
+
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { pattern, 1 }, "Pattern", StringArray { "A", "B", "C", "D" }, 0));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { chain, 1 }, "Chain Patterns", false));
+    layout.add (std::make_unique<AudioParameterInt> (ParameterID { length, 1 }, "Pattern Length", 1, GlitchEngine::numSteps, GlitchEngine::numSteps,
+                                                     AudioParameterIntAttributes().withStringFromValueFunction (
+                                                         [] (int v, int) { return String (v) + " steps"; })));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { swing, 1 }, "Swing", NormalisableRange<float> (0.0f, 0.5f), 0.0f,
+                                                       AudioParameterFloatAttributes().withStringFromValueFunction (
+                                                           [] (float v, int) { return String (roundToInt (v * 200.0f)) + "%"; })));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { mutate, 1 }, "Mutate", NormalisableRange<float> (0.0f, 1.0f), 0.0f, pct));
 
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { stepLength, 1 }, "Step Length", stepLengthNames(), 1));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { mix, 1 }, "Mix", NormalisableRange<float> (0.0f, 1.0f), 1.0f, pct));
@@ -114,6 +132,11 @@ GlitchEngine::Settings FractureProcessor::readSettings() const
     settings[GlitchEngine::filter].filterOpens = (int) param (filterDirection) == 1;
     settings[GlitchEngine::filter].resonance = param (filterResonance);
     settings[GlitchEngine::shuffle].shuffleRange = (int) param (shuffleRange);
+
+    static constexpr int echoDivisions[] { 2, 3, 4, 8 };
+    settings[GlitchEngine::echo].echoDivision = echoDivisions[juce::jlimit (0, 3, (int) param (echoTime))];
+    settings[GlitchEngine::echo].echoFeedback = param (echoFeedback);
+    settings[GlitchEngine::pitch].semitones = param (pitchSemitones);
     return settings;
 }
 
@@ -126,6 +149,11 @@ void FractureProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     GlitchEngine::Timing timing;
     timing.stepBeats = Params::stepBeats ((int) param (Params::stepLength));
+    timing.swing = param (Params::swing);
+    timing.length = (int) param (Params::length);
+    timing.pattern = (int) param (Params::pattern);
+    timing.chain = param (Params::chain) > 0.5f;
+    timing.mutate = param (Params::mutate);
     auto hasHost = false;
 
     if (auto* playHead = getPlayHead())
@@ -163,28 +191,35 @@ void FractureProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     outputSmoothed.applyGain (buffer, buffer.getNumSamples());
 }
 
-Patterns::Pattern FractureProcessor::getPattern() const
+Patterns::Pattern FractureProcessor::getPattern (int index) const
 {
     Patterns::Pattern pattern;
 
     for (int i = 0; i < GlitchEngine::numSteps; ++i)
-        pattern[(size_t) i] = engine.getStep (i);
+        pattern[(size_t) i] = engine.getStep (index, i);
 
     return pattern;
 }
 
-void FractureProcessor::setPattern (const Patterns::Pattern& pattern)
+void FractureProcessor::setPattern (int index, const Patterns::Pattern& pattern)
 {
     for (int i = 0; i < GlitchEngine::numSteps; ++i)
-        engine.setStep (i, pattern[(size_t) i]);
+        engine.setStep (index, i, pattern[(size_t) i]);
 
     updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
+}
+
+namespace
+{
+    juce::String patternKey (int index) { return "pattern" + juce::String::charToString ((juce::juce_wchar) ('A' + index)); }
 }
 
 void FractureProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
-    state.setProperty ("pattern", Patterns::toString (getPattern()), nullptr);
+
+    for (int p = 0; p < GlitchEngine::numPatterns; ++p)
+        state.setProperty (patternKey (p), Patterns::toString (getPattern (p)), nullptr);
 
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
@@ -199,9 +234,15 @@ void FractureProcessor::setStateInformation (const void* data, int sizeInBytes)
 
     auto state = juce::ValueTree::fromXml (*xml);
 
-    // The pattern lives in atomics, so it can be restored from any thread.
+    // Patterns live in atomics, so they can be restored from any thread. 0.1 had a single "pattern".
     if (state.hasProperty ("pattern"))
-        setPattern (Patterns::fromString (state.getProperty ("pattern").toString()));
+        state.setProperty (patternKey (0), state.getProperty ("pattern"), nullptr);
+
+    for (int p = 0; p < GlitchEngine::numPatterns; ++p)
+    {
+        setPattern (p, Patterns::fromString (state.getProperty (patternKey (p), "").toString()));
+        state.removeProperty (patternKey (p), nullptr);
+    }
 
     state.removeProperty ("pattern", nullptr);
     apvts.replaceState (state);

@@ -23,8 +23,8 @@ jobs:
       - name: Package
         run: |
           cd build/Fracture_artefacts/Release
-          ditto -c -k --keepParent AU/Fracture.component "$GITHUB_WORKSPACE/Fracture-${GITHUB_REF_NAME}-macOS-AU.zip"
-          ditto -c -k --keepParent VST3/Fracture.vst3 "$GITHUB_WORKSPACE/Fracture-${GITHUB_REF_NAME}-macOS-VST3.zip"
+          ditto -c -k --keepParent AU/Fracture.component "$GITHUB_WORKSPACE/Fracture-macOS-AU.zip"
+          ditto -c -k --keepParent VST3/Fracture.vst3 "$GITHUB_WORKSPACE/Fracture-macOS-VST3.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -40,7 +40,7 @@ jobs:
           cmake --build build --config Release --parallel
       - name: Package
         shell: pwsh
-        run: Compress-Archive -Path build/Fracture_artefacts/Release/VST3/Fracture.vst3 -DestinationPath "Fracture-$env:GITHUB_REF_NAME-Windows-VST3.zip"
+        run: Compress-Archive -Path build/Fracture_artefacts/Release/VST3/Fracture.vst3 -DestinationPath "Fracture-Windows-VST3.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: windows

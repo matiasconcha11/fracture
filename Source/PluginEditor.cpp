@@ -1008,33 +1008,63 @@ void FractureEditor::showPresetMenu()
 
     const auto& list = presets.getPresets();
     const auto current = presets.getCurrentIndex();
-    juce::PopupMenu menu;
-    juce::StringArray categories;
 
-    for (const auto& preset : list)
-        if (preset.factory && preset.category.isNotEmpty())
-            categories.addIfNotAlreadyThere (preset.category);
+    // Factory presets as a tree: categories like "Glitch 2 Library/Supremeja/Delay" become nested submenus.
+    struct Node
+    {
+        juce::String name;
+        std::vector<Node> children;
+        std::vector<int> items;
+
+        Node& child (const juce::String& childName)
+        {
+            for (auto& c : children)
+                if (c.name == childName)
+                    return c;
+
+            children.push_back ({ childName });
+            return children.back();
+        }
+    };
+
+    Node root;
 
     for (int i = 0; i < (int) list.size(); ++i)
-        if (list[(size_t) i].factory && list[(size_t) i].category.isEmpty())
-            menu.addItem (i + 1, list[(size_t) i].name, true, i == current);
-
-    for (const auto& category : categories)
     {
-        juce::PopupMenu sub;
+        if (! list[(size_t) i].factory)
+            continue;
+
+        auto* node = &root;
+
+        for (const auto& part : juce::StringArray::fromTokens (list[(size_t) i].category, "/", ""))
+            node = &node->child (part);
+
+        node->items.push_back (i);
+    }
+
+    std::function<bool (const Node&, juce::PopupMenu&)> build = [&] (const Node& node, juce::PopupMenu& target)
+    {
         auto containsCurrent = false;
 
-        for (int i = 0; i < (int) list.size(); ++i)
+        for (const auto i : node.items)
         {
-            if (list[(size_t) i].factory && list[(size_t) i].category == category)
-            {
-                sub.addItem (i + 1, list[(size_t) i].name, true, i == current);
-                containsCurrent |= i == current;
-            }
+            target.addItem (i + 1, list[(size_t) i].name, true, i == current);
+            containsCurrent |= i == current;
         }
 
-        menu.addSubMenu (category, sub, true, nullptr, containsCurrent);
-    }
+        for (const auto& c : node.children)
+        {
+            juce::PopupMenu sub;
+            const auto inside = build (c, sub);
+            target.addSubMenu (c.name, sub, true, nullptr, inside);
+            containsCurrent |= inside;
+        }
+
+        return containsCurrent;
+    };
+
+    juce::PopupMenu menu;
+    build (root, menu);
 
     menu.addSectionHeader ("User");
     auto anyUser = false;

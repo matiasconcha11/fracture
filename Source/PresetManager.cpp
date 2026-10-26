@@ -100,6 +100,40 @@ namespace
 
         return list;
     }
+
+    // Presets converted from the Glitch 2 factory banks (see scripts/convert_glitch_presets.py and CREDITS.md).
+    struct LibraryPreset
+    {
+        const char* category;
+        const char* name;
+        std::array<const char*, GlitchEngine::numPatterns> patterns;
+        int stepLength;
+        int length;
+        bool chain;
+    };
+
+    constexpr LibraryPreset glitchLibrary[] {
+#include "GlitchLibrary.inc"
+    };
+
+    // Our own presets first, then the Glitch 2 library, as one list.
+    const std::vector<FactoryPreset>& allFactoryPresets()
+    {
+        static const std::vector<FactoryPreset> all = []
+        {
+            auto list = factoryPresets();
+
+            for (const auto& preset : glitchLibrary)
+                list.push_back ({ preset.category, preset.name, preset.patterns,
+                                  { { Params::stepLength, (float) preset.stepLength },
+                                    { Params::length, (float) preset.length },
+                                    { Params::chain, preset.chain ? 1.0f : 0.0f } } });
+
+            return list;
+        }();
+
+        return all;
+    }
 }
 
 PresetManager::PresetManager (FractureProcessor& p, juce::File directory)
@@ -127,14 +161,14 @@ juce::File PresetManager::defaultUserDirectory()
 
 int PresetManager::numFactoryPresets()
 {
-    return (int) factoryPresets().size();
+    return (int) allFactoryPresets().size();
 }
 
 void PresetManager::refresh()
 {
     presets.clear();
 
-    for (const auto& factory : factoryPresets())
+    for (const auto& factory : allFactoryPresets())
         presets.push_back ({ factory.name, factory.category, true, {} });
 
     auto files = userDirectory.findChildFiles (juce::File::findFiles, false, juce::String ("*") + fileExtension);
@@ -147,7 +181,7 @@ void PresetManager::refresh()
 
 void PresetManager::applyFactory (int index)
 {
-    const auto& preset = factoryPresets()[(size_t) index];
+    const auto& preset = allFactoryPresets()[(size_t) index];
     const FractureProcessor::ScopedPresetLoad loading (processor);
 
     // Start from defaults (keeping bypass and the selected slot), then apply the preset's changes.
@@ -206,6 +240,7 @@ bool PresetManager::load (int index)
         processor.setStateTree (state);
     }
 
+    lastLoaded = index;
     processor.markPresetClean();
     processor.updateHostDisplay (juce::AudioProcessor::ChangeDetails().withNonParameterStateChanged (true));
     return true;
@@ -236,6 +271,7 @@ bool PresetManager::save (const juce::String& requestedName)
 
     processor.markPresetClean();
     refresh();
+    lastLoaded = -1;
     return true;
 }
 
@@ -261,6 +297,9 @@ bool PresetManager::remove (int index)
 int PresetManager::getCurrentIndex() const
 {
     const auto name = processor.getPresetName();
+
+    if (juce::isPositiveAndBelow (lastLoaded, (int) presets.size()) && presets[(size_t) lastLoaded].name == name)
+        return lastLoaded;
 
     for (size_t i = presets.size(); i-- > 0;) // user presets win over a factory one with the same name
         if (presets[i].name == name)

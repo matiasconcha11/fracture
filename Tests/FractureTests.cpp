@@ -368,6 +368,13 @@ TEST_CASE ("MIDI notes switch patterns and hold effects", "[processor]")
     CHECK (processor.engine.firingLane.load() == GlitchEngine::noEffect);
 }
 
+TEST_CASE ("Short pattern strings are empty past their end", "[patterns]")
+{
+    const auto pattern = Patterns::fromString ("R+");
+    CHECK (Patterns::toString (pattern) == "R+..............");
+    CHECK (Patterns::toString (Patterns::fromString ("")) == "................");
+}
+
 TEST_CASE ("Blocks, ties and overrides survive text and state round trips", "[patterns]")
 {
     auto pattern = Patterns::fromString ("R+++.V+..?..X++.");
@@ -388,7 +395,7 @@ TEST_CASE ("Every factory preset loads and marks itself clean", "[presets]")
     const auto directory = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("FracturePresets", {}, false);
     PresetManager presets (processor, directory);
 
-    REQUIRE (PresetManager::numFactoryPresets() >= 40);
+    REQUIRE (PresetManager::numFactoryPresets() >= 350); // ours plus the Glitch 2 library
 
     for (int i = 0; i < PresetManager::numFactoryPresets(); ++i)
     {
@@ -397,10 +404,49 @@ TEST_CASE ("Every factory preset loads and marks itself clean", "[presets]")
         CHECK_FALSE (processor.isPresetDirty());
         CHECK (presets.getCurrentIndex() == i);
 
+        // Every preset but Init has something in one of its patterns.
         if (i > 0)
-            CHECK_FALSE (processor.engine.isEmpty (0)); // every preset but Init has something in pattern A
+        {
+            auto any = false;
+
+            for (int p = 0; p < GlitchEngine::numPatterns; ++p)
+                any |= ! processor.engine.isEmpty (p);
+
+            CHECK (any);
+        }
     }
 
+    directory.deleteRecursively();
+}
+
+TEST_CASE ("Glitch 2 library presets keep their timing and are filed by designer", "[presets]")
+{
+    const juce::ScopedJuceInitialiser_GUI juce;
+    FractureProcessor processor;
+    const auto directory = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("FracturePresets", {}, false);
+    PresetManager presets (processor, directory);
+
+    auto library = 0;
+    auto chained = 0;
+
+    for (int i = 0; i < PresetManager::numFactoryPresets(); ++i)
+    {
+        const auto& preset = presets.getPresets()[(size_t) i];
+
+        if (! preset.category.startsWith ("Glitch 2 Library/"))
+            continue;
+
+        ++library;
+        REQUIRE (presets.load (i));
+
+        const auto length = (int) processor.apvts.getRawParameterValue (Params::length)->load();
+        CHECK (length >= 1);
+        CHECK (length <= GlitchEngine::numSteps);
+        chained += processor.apvts.getRawParameterValue (Params::chain)->load() > 0.5f ? 1 : 0;
+    }
+
+    CHECK (library > 300);
+    CHECK (chained > 10); // long Glitch scenes are split across patterns A-D and chained
     directory.deleteRecursively();
 }
 
@@ -415,7 +461,7 @@ TEST_CASE ("User presets save and load back", "[presets]")
     REQUIRE (presets.save ("My Glitch"));
     CHECK_FALSE (processor.isPresetDirty());
 
-    presets.load (0);
+    REQUIRE (presets.load (0));
     REQUIRE (processor.engine.isEmpty (1));
 
     REQUIRE (presets.load ((int) presets.getPresets().size() - 1));

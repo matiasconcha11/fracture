@@ -43,4 +43,5 @@ private:
     FractureProcessor& processor;
     juce::File userDirectory;
     std::vector<Preset> presets;
+    int lastLoaded = -1; // names can repeat across banks, so remember which entry was loaded
 };

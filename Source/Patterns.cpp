@@ -62,7 +62,8 @@ namespace Patterns
 
         for (int i = 0; i < GlitchEngine::numSteps; ++i)
         {
-            const auto c = text[i];
+            // Short strings are empty past their end (reading beyond a juce::String is undefined).
+            const auto c = i < text.length() ? text[i] : (juce::juce_wchar) '.';
 
             if (c == '+' && i > 0 && pattern[(size_t) i - 1].lane != GlitchEngine::noEffect)
                 pattern[(size_t) i] = { pattern[(size_t) i - 1].lane, true };

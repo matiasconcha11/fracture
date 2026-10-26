@@ -2,8 +2,8 @@
 
 **A step sequencer of glitch effects.** Draw effect blocks onto a 16-step grid and Fracture plays them in time
 with your DAW: stutters, reverses, tape stops, time-stretches, gates, bit crushing, distortion, filter sweeps, ring
-modulation, echoes, pitch shifts and shuffled slices. Pick one of 50+ presets, hit Randomize, turn up Mutate and let
-the pattern evolve, or play effects live from a MIDI keyboard.
+modulation, echoes, pitch shifts and shuffled slices. Pick a preset, hit Randomize, turn up Mutate and let
+the pattern evolve, or play effects live from a MIDI keyboard. 370+ presets to start from.
 
 AU · VST3 · Standalone — macOS (Windows VST3 builds in CI) — by [Rhizr](https://rhizr.dev/music), built with [JUCE](https://juce.com)
 
@@ -18,8 +18,9 @@ AU · VST3 · Standalone — macOS (Windows VST3 builds in CI) — by [Rhizr](ht
 - **Per-block settings** — right-click a block to give it its own chance and value (e.g. 8 repeats here,
   16 there, or a pitch that steps down block by block)
 - **Four patterns (A–D) and Chain**; **Mutate** lets the pattern evolve a little every loop
-- **Presets** — 50+ factory presets in categories (Stutter, Time, Rhythm, Lo-Fi, Filter & Space, Pitch,
-  Random & Evolving, Combos), plus your own saved as `.fracturepreset` files
+- **Presets** — 50+ of our own in categories (Stutter, Time, Rhythm, Lo-Fi, Filter & Space, Pitch,
+  Random & Evolving, Combos), a **Glitch 2 Library** of 320+ patterns converted from the Glitch 2 factory banks
+  (designers credited in [CREDITS.md](CREDITS.md)), plus your own saved as `.fracturepreset` files
 - **MIDI** — notes C1–D#1 switch between patterns A–D; notes from C2 up play an effect live for as long as they're
   held, even with the transport stopped
 - **Timing** — 1/8, 1/16, 1/32 or triplet steps, swing, and pattern lengths of 1–16 for polyrhythms

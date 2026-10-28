@@ -27,7 +27,7 @@ namespace
         }
 
         // Runs `numSamples` of `source` (the ramp by default) from song start, returning the left channel.
-        std::vector<float> run (int numSamples, float mix = 1.0f, std::function<float (int)> source = [] (int n) { return ramp (n); })
+        std::vector<float> run (int numSamples, float mix = 1.0f, std::function<float (int)> source = [] (int n) { return ramp (n); }, float protect = 0.0f)
         {
             std::vector<float> out;
             juce::AudioBuffer<float> buffer (2, blockSize);
@@ -39,7 +39,7 @@ namespace
                         buffer.setSample (ch, i, source (start + i));
 
                 timing.ppq = start * (timing.bpm / 60.0 / sampleRate);
-                engine.process (buffer, timing, settings, mix);
+                engine.process (buffer, timing, settings, mix, protect);
                 out.insert (out.end(), buffer.getReadPointer (0), buffer.getReadPointer (0) + blockSize);
             }
 
@@ -88,6 +88,16 @@ TEST_CASE_METHOD (EngineFixture, "Reverse plays the previous step backwards", "[
 
     for (int t : { 500, 3000, 5500 })
         CHECK_THAT (out[(size_t) (stepSamples + t)], WithinAbs (ramp (stepSamples - 1 - t), 1.0e-6));
+}
+
+TEST_CASE_METHOD (EngineFixture, "Protect lets a new hit through a reverse block and then returns to the effect", "[engine]")
+{
+    engine.setStep (0, 1, GlitchEngine::reverse);
+    const auto source = [] (int n) { return n == stepSamples + 1000 ? 1.0f : (n < stepSamples ? 0.2f : 0.1f); };
+    const auto out = run (stepSamples * 2, 1.0f, source, 1.0f);
+
+    CHECK (out[(size_t) stepSamples + 1000] > 0.95f);
+    CHECK_THAT (out[(size_t) stepSamples + 5500], WithinAbs (0.2f, 0.005f));
 }
 
 TEST_CASE_METHOD (EngineFixture, "Tape stop starts at normal speed and falls behind", "[engine]")
@@ -495,6 +505,8 @@ TEST_CASE ("Editor snapshot", "[.snapshot]")
     FractureProcessor processor;
     PresetManager presets (processor);
     presets.load (juce::SystemStats::getEnvironmentVariable ("FRACTURE_SNAPSHOT_PRESET", "48").getIntValue());
+    if (auto* protect = processor.apvts.getParameter (Params::protect))
+        protect->setValueNotifyingHost (0.7f);
     processor.engine.setRandomSeed (3);
 
     // Play a few bars of a drum-like signal so the strip and the playhead have something to show.
@@ -528,6 +540,8 @@ TEST_CASE ("Editor snapshot", "[.snapshot]")
     }
 
     std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
+    if (juce::SystemStats::getEnvironmentVariable ("FRACTURE_SNAPSHOT_MIN", "0") == "1")
+        editor->setSize (1000, 760);
     const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
     const auto path = juce::SystemStats::getEnvironmentVariable ("FRACTURE_SNAPSHOT", "/tmp/fracture.png");
     juce::File (path).deleteFile();

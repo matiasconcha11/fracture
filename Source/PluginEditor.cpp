@@ -190,6 +190,12 @@ void StepGrid::paintStrip (juce::Graphics& g)
 
             g.setColour (lane == GlitchEngine::noEffect ? Theme::text.withAlpha (0.28f) : laneColour (lane).withAlpha (0.9f));
             g.fillRect (col.getX() + (float) b * binWidth, centre - h, juce::jmax (1.0f, binWidth - 0.5f), h * 2.0f);
+            const auto protectedAttack = engine.waveformProtect[index].load (std::memory_order_relaxed);
+            if (protectedAttack > 0.25f)
+            {
+                g.setColour (juce::Colour (0xffe4b562).withAlpha (juce::jmin (0.9f, protectedAttack)));
+                g.fillRect (col.getX() + (float) b * binWidth, strip.getY() + 3.0f, juce::jmax (1.0f, binWidth - 0.5f), 3.0f);
+            }
         }
     }
 }
@@ -854,9 +860,11 @@ FractureEditor::FractureEditor (FractureProcessor& p)
     swingKnob = &addKnob (Params::swing, "SWING", Theme::text.withAlpha (0.85f), true);
     mutateKnob = &addKnob (Params::mutate, "MUTATE", laneColour (GlitchEngine::randomLane), true);
     mixKnob = &addKnob (Params::mix, "MIX", Theme::text.withAlpha (0.85f), true);
+    protectKnob = &addKnob (Params::protect, "PROTECT", juce::Colour (0xffe4b562), true);
     outputKnob = &addKnob (Params::outputGain, "OUTPUT", Theme::text.withAlpha (0.85f), true);
     outputKnob->slider.getProperties().set ("bipolar", true);
     mutateKnob->slider.setTooltip ("Chance each loop that a step or two change by themselves");
+    protectKnob->slider.setTooltip ("Keep new attacks clear inside effect blocks. At 0%, the original effect sound is unchanged.");
 
     addChildComponent (prompt);
 
@@ -1227,13 +1235,13 @@ void FractureEditor::paint (juce::Graphics& g)
     g.setColour (Theme::dim);
     g.drawText ("STEP", stepSelector.getBounds().withY (stepSelector.getY() - 18).withHeight (14), juce::Justification::centredLeft);
 
-    for (auto* knob : { lengthKnob, swingKnob, mutateKnob, mixKnob, outputKnob })
+    for (auto* knob : { lengthKnob, swingKnob, mutateKnob, mixKnob, protectKnob, outputKnob })
         g.drawText (knob->caption, knob->slider.getBounds().withY (knob->slider.getY() - 14).withHeight (12), juce::Justification::centred);
 
     g.setFont (Theme::font (10.5f));
     g.setColour (Theme::faint);
-    g.drawText ("MIDI: C1-D#1 switch patterns, C2 and up play an effect while held. Right-click a block for its own settings.",
-                stepSelector.getBounds().withY (stepSelector.getBottom() + 6).withHeight (14).withWidth (620), juce::Justification::centredLeft);
+    g.drawText ("Right-click a block for its settings. PROTECT keeps fresh hits clear inside a glitch.",
+                stepSelector.getBounds().withY (stepSelector.getBottom() + 6).withHeight (14).withWidth (700), juce::Justification::centredLeft);
 }
 
 void FractureEditor::resized()
@@ -1274,15 +1282,16 @@ void FractureEditor::resized()
     toolbar.removeFromRight (6);
     patternsButton.setBounds (toolbar.removeFromRight (92));
 
-    // Footer: step length | length, swing, mutate | mix, output.
+    // Footer: step length | length, swing, mutate | mix, protect, output.
     footerArea = bounds.removeFromBottom (footerHeight);
     auto footer = footerArea.reduced (margin, 10);
     stepSelector.setBounds (footer.removeFromLeft (360).withTrimmedTop (22).withHeight (28));
 
     const auto placeKnob = [] (Knob* knob, juce::Rectangle<int> area) { knob->slider.setBounds (area.withTrimmedTop (14)); };
 
-    auto right = footer.removeFromRight (180);
+    auto right = footer.removeFromRight (270);
     placeKnob (outputKnob, right.removeFromRight (90));
+    placeKnob (protectKnob, right.removeFromRight (90));
     placeKnob (mixKnob, right);
 
     auto middle = footer.withSizeKeepingCentre (270, footer.getHeight()).translated (60, 0);

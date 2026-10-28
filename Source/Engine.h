@@ -99,7 +99,7 @@ public:
     int getPatternOverride() const { return patternOverride.load(); }
     void setLiveLane (int lane) { liveLane.store (lane); }
 
-    void process (juce::AudioBuffer<float>& buffer, const Timing&, const Settings&, float mix);
+    void process (juce::AudioBuffer<float>& buffer, const Timing&, const Settings&, float mix, float protect = 0.0f);
 
     void setRandomSeed (juce::int64 seed) { random.setSeed (seed); }
 
@@ -111,6 +111,7 @@ public:
     std::atomic<int> firingLane { noEffect }; // the lane whose block is playing (Random shows itself)
     std::array<std::atomic<float>, waveformBins> waveform {}; // output peak across the 16 steps
     std::array<std::atomic<int>, waveformBins> waveformLane {};
+    std::array<std::atomic<float>, waveformBins> waveformProtect {};
 
 private:
     struct StepAtoms
@@ -153,9 +154,12 @@ private:
     std::array<Dsp::Crusher, 2> crushers;
     std::array<std::vector<float>, 2> echoBuffers; // indexed by position within the event
     float gateEnvelope = 1.0f;
+    float inputLevel = 0.0f, attackEnvelope = 0.0f;
+    int attackHold = 0, attackCooldown = 0;
 
     int waveBin = 0;
     float wavePeak = 0.0f;
+    float waveProtectPeak = 0.0f;
 
     juce::Random random;
 };

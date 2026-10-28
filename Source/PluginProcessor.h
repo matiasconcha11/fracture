@@ -38,6 +38,7 @@ namespace Params
 
     inline const juce::String stepLength { "stepLength" };
     inline const juce::String mix { "mix" };
+    inline const juce::String protect { "protect" };
     inline const juce::String outputGain { "outputGain" };
     inline const juce::String bypass { "bypass" };
 

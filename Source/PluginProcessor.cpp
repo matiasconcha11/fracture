@@ -109,6 +109,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FractureProcessor::createLay
 
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { stepLength, 1 }, "Step Length", stepLengthNames(), 1));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { mix, 1 }, "Mix", NormalisableRange<float> (0.0f, 1.0f), 1.0f, pct));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { protect, 1 }, "Protect Attacks", NormalisableRange<float> (0.0f, 1.0f), 0.0f, pct));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { outputGain, 1 }, "Output", NormalisableRange<float> (-24.0f, 12.0f, 0.1f), 0.0f,
                                                        AudioParameterFloatAttributes().withStringFromValueFunction (
                                                            [] (float v, int) { return (v > 0.0f ? "+" : "") + String (v, 1) + " dB"; })));
@@ -246,7 +247,7 @@ void FractureProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     mixSmoothed.setTargetValue (param (Params::bypass) > 0.5f ? 0.0f : param (Params::mix));
     const auto mix = mixSmoothed.skip (buffer.getNumSamples());
 
-    engine.process (buffer, timing, readSettings(), mix);
+    engine.process (buffer, timing, readSettings(), mix, param (Params::protect));
 
     outputSmoothed.setTargetValue (juce::Decibels::decibelsToGain (param (Params::outputGain)));
     outputSmoothed.applyGain (buffer, buffer.getNumSamples());

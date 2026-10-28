@@ -4,13 +4,13 @@
 
 namespace Theme
 {
-    const juce::Colour background { 0xff0b0c0f };
-    const juce::Colour panel { 0xff131419 };
-    const juce::Colour raised { 0xff1b1d23 };
-    const juce::Colour outline { 0xff272a33 };
-    const juce::Colour text { 0xffeceae4 };
-    const juce::Colour dim { 0xff7d808a };
-    const juce::Colour faint { 0xff4a4d57 };
+    const juce::Colour background { 0xff151412 };
+    const juce::Colour panel { 0xff211f1c };
+    const juce::Colour raised { 0xff2d2925 };
+    const juce::Colour outline { 0xff403a32 };
+    const juce::Colour text { 0xfff3ecde };
+    const juce::Colour dim { 0xffb7aa97 };
+    const juce::Colour faint { 0xff756b5e };
 
     const juce::Colour modules[] { juce::Colour (0xffffb347),   // volume: amber
                                    juce::Colour (0xff6fd3c6),   // pan: teal

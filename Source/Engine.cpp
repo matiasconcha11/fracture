@@ -49,6 +49,11 @@ void GlitchEngine::prepare (double newSampleRate, int numChannels)
     currentStepNumber = -1;
     activeLane = shownLane = playingLiveLane = noEffect;
     gateEnvelope = 1.0f;
+    inputLevel = attackEnvelope = 0.0f;
+    attackHold = attackCooldown = 0;
+    wavePeak = waveProtectPeak = 0.0f;
+    for (auto& marker : waveformProtect)
+        marker.store (0.0f, std::memory_order_relaxed);
 
     for (auto& buffer : echoBuffers)
         buffer.assign ((size_t) (echoSeconds * sampleRate), 0.0f);
@@ -337,7 +342,7 @@ float GlitchEngine::effectSample (int channel, float input, double t)
     }
 }
 
-void GlitchEngine::process (juce::AudioBuffer<float>& buffer, const Timing& timing, const Settings& settings, float mix)
+void GlitchEngine::process (juce::AudioBuffer<float>& buffer, const Timing& timing, const Settings& settings, float mix, float protect)
 {
     const auto numSamples = buffer.getNumSamples();
     const auto numChannels = juce::jmin (buffer.getNumChannels(), (int) history.size());
@@ -348,6 +353,15 @@ void GlitchEngine::process (juce::AudioBuffer<float>& buffer, const Timing& timi
     const auto fade = fadeSeconds * sampleRate;
     const auto split = 1.0 + juce::jlimit (0.0, 0.5, timing.swing); // where the second step of each pair starts
     const auto patternLength = juce::jlimit (1, numSteps, timing.length);
+    const auto levelRate = (float) (1.0 - std::exp (-1.0 / (0.035 * sampleRate)));
+    const auto release = (float) std::exp (-1.0 / (0.024 * sampleRate));
+    protect = juce::jlimit (0.0f, 1.0f, protect);
+    const auto detectAttacks = protect > 0.0f;
+    if (! detectAttacks)
+    {
+        inputLevel = attackEnvelope = 0.0f;
+        attackHold = attackCooldown = 0;
+    }
 
     // A live (MIDI) effect lasts a beat and loops for as long as the note is held.
     if (const auto live = liveLane.load(); live != playingLiveLane)
@@ -370,6 +384,27 @@ void GlitchEngine::process (juce::AudioBuffer<float>& buffer, const Timing& timi
 
     for (int i = 0; i < numSamples; ++i)
     {
+        if (detectAttacks)
+        {
+            float inputPeak = 0.0f;
+            for (int ch = 0; ch < numChannels; ++ch)
+                inputPeak = juce::jmax (inputPeak, std::abs (buffer.getSample (ch, i)));
+
+            if (attackCooldown > 0)
+                --attackCooldown;
+            if (attackCooldown == 0 && inputPeak > juce::jmax (0.002f, inputLevel * 2.5f))
+            {
+                attackEnvelope = 1.0f;
+                attackHold = (int) (0.012 * sampleRate);
+                attackCooldown = (int) (0.055 * sampleRate);
+            }
+            inputLevel += levelRate * (inputPeak - inputLevel);
+            if (attackHold > 0)
+                --attackHold;
+            else
+                attackEnvelope *= release;
+        }
+
         // Record first: effects may read the sample that just arrived.
         for (int ch = 0; ch < numChannels; ++ch)
             history[(size_t) ch][(size_t) (written % historySize)] = buffer.getSample (ch, i);
@@ -413,7 +448,7 @@ void GlitchEngine::process (juce::AudioBuffer<float>& buffer, const Timing& timi
 
             // Fade the effect in and out at the block edges so switching never clicks.
             const auto edge = (float) juce::jlimit (0.0, 1.0, juce::jmin (t + 1.0, eventLength - t) / fade);
-            const auto amount = edge * mix;
+            const auto amount = edge * mix * (1.0f - protect * attackEnvelope);
 
             for (int ch = 0; ch < numChannels; ++ch)
             {
@@ -432,9 +467,14 @@ void GlitchEngine::process (juce::AudioBuffer<float>& buffer, const Timing& timi
             {
                 waveform[(size_t) waveBin].store (wavePeak, std::memory_order_relaxed);
                 waveformLane[(size_t) waveBin].store (activeLane == noEffect ? noEffect : shownLane, std::memory_order_relaxed);
+                waveformProtect[(size_t) waveBin].store (waveProtectPeak, std::memory_order_relaxed);
                 wavePeak = 0.0f;
+                waveProtectPeak = 0.0f;
                 waveBin = bin;
             }
+
+            if (activeLane != noEffect)
+                waveProtectPeak = juce::jmax (waveProtectPeak, protect * attackEnvelope);
 
             for (int ch = 0; ch < numChannels; ++ch)
                 wavePeak = juce::jmax (wavePeak, std::abs (buffer.getSample (ch, i)));

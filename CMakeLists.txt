@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.22)
 # -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" for a universal binary.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(Fracture VERSION 0.4.0)
+project(Fracture VERSION 0.5.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -89,4 +89,12 @@ if(FRACTURE_BUILD_TESTS)
     include(CTest)
     include(${catch2_SOURCE_DIR}/extras/Catch.cmake)
     catch_discover_tests(FractureTests)
+endif()
+
+option(FRACTURE_BUILD_RENDERER "Build the offline listening renderer" OFF)
+if(FRACTURE_BUILD_RENDERER)
+    add_executable(FractureRender Source/Engine.cpp Utilities/Render.cpp)
+    target_include_directories(FractureRender PRIVATE Source)
+    target_link_libraries(FractureRender PRIVATE juce::juce_audio_utils juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+    target_compile_definitions(FractureRender PRIVATE JUCE_STANDALONE_APPLICATION=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 endif()

@@ -9,6 +9,8 @@ AU · VST3 · Standalone — macOS (Windows VST3 builds in CI) — by [Rhizr](ht
 
 ![Fracture](docs/screenshot.png)
 
+Hear [Protect 0% then 70% on the same clean-guitar phrase](docs/demo-protect-ab.wav). The two halves are loudness matched; [source and settings](docs/protect-audio.md).
+
 ## Features
 
 - **Thirteen effect lanes**: Repeat, Reverse, Tape Stop, Stretch, Gate, Crush, Distort, Filter, Ring Mod, Echo,
@@ -26,6 +28,8 @@ AU · VST3 · Standalone — macOS (Windows VST3 builds in CI) — by [Rhizr](ht
 - **Timing** — 1/8, 1/16, 1/32 or triplet steps, swing, and pattern lengths of 1–16 for polyrhythms
 - **Live view** — a waveform of the output coloured by the effect that shaped each moment, a playhead, and a
   sweep across the block that's playing
+- **Protect Attacks** (development build) — lets fresh drum or guitar hits cut through a glitch block, then
+  returns to the effect. The waveform marks protected moments. At 0%, existing presets sound as before.
 - **Undo/redo**, resizable window, mix, output and click-free bypass
 
 ## Install
@@ -70,6 +74,7 @@ The build installs the plugin into `~/Library/Audio/Plug-Ins/`.
 - A step holds one effect at a time: drawing over a step replaces whatever was there.
 - In Logic, route MIDI to Fracture with the **Side Chain** (MIDI) menu at the top of the plugin window.
 - Hover a small knob to see what it does; drag it to change the value.
+- Turn up **Protect** when a reverse, gate or repeat pattern loses the attack of the original performance.
 - Effects that replay audio (Repeat, Reverse, Tape Stop, Shuffle) use what the track played a moment ago, so they
   work best on parts that are already playing (drums, loops, vocals), not on the very first step after you press play.
 
@@ -80,6 +85,11 @@ make            # Release build, installed into ~/Library/Audio/Plug-Ins/
 make test       # unit tests (Catch2)
 make validate   # pluginval at strictness 10 on the VST3 and AU
 make check      # test + validate
+
+# Optional offline WAV listening renderer
+cmake -B build -DFRACTURE_BUILD_RENDERER=ON
+cmake --build build --target FractureRender
+./build/FractureRender input.wav output-directory start-seconds
 
 ./build/FractureTests "[.snapshot]"   # render the editor to /tmp/fracture.png
 ```

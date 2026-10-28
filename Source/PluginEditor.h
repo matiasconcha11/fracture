@@ -171,6 +171,7 @@ private:
     Knob* swingKnob = nullptr;
     Knob* mutateKnob = nullptr;
     Knob* mixKnob = nullptr;
+    Knob* protectKnob = nullptr;
     Knob* outputKnob = nullptr;
 
     PromptOverlay prompt;

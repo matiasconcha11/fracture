@@ -1154,17 +1154,20 @@ void FractureEditor::paint (juce::Graphics& g)
     g.setColour (Theme::outline);
     g.drawHorizontalLine (headerHeight - 1, 0.0f, (float) getWidth());
 
-    // Logo: a broken line.
-    const auto m = juce::Rectangle<float> ((float) margin, 17.0f, 26.0f, 22.0f);
+    const auto m = juce::Rectangle<float> ((float) margin, 15.0f, 26.0f, 26.0f);
     juce::Path logo;
-    logo.startNewSubPath (m.getX(), m.getCentreY());
-    logo.lineTo (m.getX() + 8.0f, m.getCentreY());
-    logo.startNewSubPath (m.getX() + 11.0f, m.getY());
-    logo.lineTo (m.getX() + 15.0f, m.getBottom());
-    logo.startNewSubPath (m.getX() + 18.0f, m.getCentreY());
-    logo.lineTo (m.getRight(), m.getCentreY());
-    g.setGradientFill (juce::ColourGradient (laneColour (GlitchEngine::shuffle), m.getTopLeft(), laneColour (GlitchEngine::gate), m.getBottomRight(), false));
-    g.strokePath (logo, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    logo.startNewSubPath (32.0f, 54.0f);
+    logo.lineTo (32.0f, 37.0f);
+    logo.lineTo (21.0f, 28.0f);
+    logo.lineTo (21.0f, 16.0f);
+    logo.startNewSubPath (32.0f, 37.0f);
+    logo.lineTo (39.0f, 30.0f);
+    logo.startNewSubPath (46.0f, 23.0f);
+    logo.lineTo (51.0f, 18.0f);
+    logo.lineTo (51.0f, 11.0f);
+    logo.applyTransform (juce::AffineTransform::scale (m.getWidth() / 64.0f, m.getHeight() / 64.0f).translated (m.getX(), m.getY()));
+    g.setColour (juce::Colour (0xffe0714a));
+    g.strokePath (logo, juce::PathStrokeType (2.1f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
     auto title = juce::Rectangle<int> (margin + 36, 0, 260, headerHeight);
     g.setColour (Theme::text);

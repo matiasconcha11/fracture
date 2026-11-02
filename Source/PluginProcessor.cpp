@@ -109,7 +109,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FractureProcessor::createLay
 
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { stepLength, 1 }, "Step Length", stepLengthNames(), 1));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { mix, 1 }, "Mix", NormalisableRange<float> (0.0f, 1.0f), 1.0f, pct));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { protect, 1 }, "Protect Attacks", NormalisableRange<float> (0.0f, 1.0f), 0.0f, pct));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { protect, 2 }, "Protect Attacks", NormalisableRange<float> (0.0f, 1.0f), 0.0f, pct));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { outputGain, 1 }, "Output", NormalisableRange<float> (-24.0f, 12.0f, 0.1f), 0.0f,
                                                        AudioParameterFloatAttributes().withStringFromValueFunction (
                                                            [] (float v, int) { return (v > 0.0f ? "+" : "") + String (v, 1) + " dB"; })));
@@ -280,6 +280,7 @@ namespace
 juce::ValueTree FractureProcessor::getStateTree()
 {
     auto state = apvts.copyState();
+    state.setProperty ("schemaVersion", 1, nullptr);
 
     for (int p = 0; p < GlitchEngine::numPatterns; ++p)
     {
@@ -323,6 +324,7 @@ void FractureProcessor::setStateTree (const juce::ValueTree& source)
     state.removeProperty ("pattern", nullptr);
     state.removeProperty ("presetName", nullptr);
     state.removeProperty ("presetDirty", nullptr);
+    state.removeProperty ("schemaVersion", nullptr);
     apvts.replaceState (state);
     presetDirty = dirty;
 }

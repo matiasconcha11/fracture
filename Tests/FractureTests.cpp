@@ -6,6 +6,27 @@
 
 using Catch::Matchers::WithinAbs;
 
+TEST_CASE ("Published parameter IDs and AU version hints stay stable", "[compatibility]")
+{
+    FractureProcessor processor;
+    const juce::StringArray expected {
+        "repeatChance", "reverseChance", "tapeChance", "stretchChance", "gateChance", "crushChance", "distortChance",
+        "filterChance", "ringChance", "echoChance", "pitchChance", "shuffleChance", "randomChance",
+        "repeatCount", "repeatPitch", "tapeCurve", "stretchSpeed", "distortAmount", "ringFrequency", "gatePulses",
+        "gateDuty", "crushAmount", "filterDirection", "filterResonance", "shuffleRange", "echoTime", "echoFeedback",
+        "pitchSemitones", "pattern", "chain", "length", "swing", "mutate", "stepLength", "mix", "protect", "outputGain", "bypass"
+    };
+    REQUIRE (processor.getParameters().size() == expected.size());
+
+    for (int i = 0; i < expected.size(); ++i)
+    {
+        auto* parameter = dynamic_cast<juce::AudioProcessorParameterWithID*> (processor.getParameters()[i]);
+        REQUIRE (parameter != nullptr);
+        CHECK (parameter->getParameterID() == expected[i]);
+        CHECK (parameter->getVersionHint() == (expected[i] == "protect" ? 2 : 1));
+    }
+}
+
 namespace
 {
     constexpr double sampleRate = 48000.0;
